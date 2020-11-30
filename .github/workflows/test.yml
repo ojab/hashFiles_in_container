@@ -1,0 +1,54 @@
+name: hashFiles in container test
+
+'on':
+  push:
+
+defaults:
+  run:
+    working-directory: /app
+
+jobs:
+  build_image:
+    name: Build image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: docker/setup-buildx-action@v1
+
+      - uses: docker/login-action@v1
+        with:
+          registry: docker.pkg.github.com
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/build-push-action@v2
+        with:
+          context: .
+          tags: docker.pkg.github.com/ojab/hashfiles_in_container/test:latest
+          push: true
+
+  cache_revision:
+    name: Try to cache REVISION from container
+    needs: [build_image]
+    runs-on: ubuntu-latest
+    container:
+      image: docker.pkg.github.com/ojab/hashfiles_in_container/test:latest
+      # HACK: without that line `hashFiles()` doesn't find anyting
+      options: --mount type=volume,dst=/app,volume-driver=local,volume-opt=type=none,volume-opt=o=bind,volume-opt=device=${{ github.workspace }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+    steps:
+      - name: Cache REVISION
+        uses: actions/cache@v2
+        id: cache-revision
+        with:
+          path: REVISION
+          key: revision-${{ hashFiles('REVISION') }}
+          restore-keys: revision-
+
+      - name: Generate /app/REVISION
+        run: git --git-dir /tmp/.git rev-parse HEAD > /app/REVISION
